@@ -1,7 +1,7 @@
 from data.loader import load_data
 from data.preprocessor import preprocess_data
 
-from core.pattern_engine import run_core_engine
+from core.pattern_spike_engine import run_core_engine
 from core.anomaly_engine import detect_anomalies
 
 from analysis.correlation import compute_correlation
