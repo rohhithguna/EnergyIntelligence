@@ -1,11 +1,11 @@
-from data.loader import load_data
-from data.preprocessor import preprocess_data
+from EnergyIntelligence.data.loader import load_data
+from EnergyIntelligence.data.preprocessor import preprocess_data
 
-from core.pattern_spike_engine import run_core_engine
-from core.anomaly_engine import detect_anomalies
+from EnergyIntelligence.core.pattern_spike_engine import run_core_engine
+from EnergyIntelligence.core.anomaly_engine import detect_anomalies
 
-from analysis.correlation import compute_correlation
-from analysis.insight_generator import generate_insights
+from EnergyIntelligence.analysis.correlation import compute_correlation
+from EnergyIntelligence.analysis.insight_generator import generate_insights
 
 
 # Step 1: Load data
