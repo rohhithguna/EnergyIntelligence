@@ -1,42 +1,48 @@
-# analysis/insight_generator.py
+def _fmt(value):
+    try:
+        return f"{float(value):.2f}"
+    except Exception:
+        return "0.00"
 
-def generate_insights(spikes, drops, anomalies, correlation_matrix):
-    """
-    Generate insights based on detected patterns
-    :param spikes: list or dataframe of spikes
-    :param drops: list or dataframe of drops
-    :param anomalies: dataframe of anomalies
-    :param correlation_matrix: correlation matrix
-    :return: list of insights
-    """
 
+def generate_insights(spikes, drops, anomalies, trend="stable", distribution=None):
     insights = []
 
-    # Spike insights
-    if len(spikes) > 0:
-        insights.append("High spikes detected → possible system overload")
+    # Backward compatibility for older callers that pass non-event arguments.
+    spikes = spikes if isinstance(spikes, list) else []
+    drops = drops if isinstance(drops, list) else []
+    anomalies = anomalies if isinstance(anomalies, list) else []
+    distribution = distribution if isinstance(distribution, dict) else {}
 
-    # Drop insights
-    if len(drops) > 0:
-        insights.append("Sudden drops detected → possible failures or interruptions")
+    if spikes:
+        max_spike = max((s.get("data_rate", 0) for s in spikes), default=0)
+        insights.append(
+            f"{len(spikes)} spikes detected with maximum value {_fmt(max_spike)}, indicating high load variation."
+        )
 
-    # Anomaly insights
-    if len(anomalies) > 0:
-        insights.append(f"{len(anomalies)} anomalies detected → irregular system behavior")
+    if drops:
+        min_drop = min((d.get("data_rate", 0) for d in drops), default=0)
+        insights.append(
+            f"{len(drops)} drops detected with minimum value {_fmt(min_drop)}, indicating possible interruption periods."
+        )
 
-    # Correlation insights (if time column exists)
-    if 'time' in correlation_matrix.columns and 'data_rate' in correlation_matrix.columns:
-        corr_value = correlation_matrix.loc['time', 'data_rate']
+    if anomalies:
+        max_anomaly = max((a.get("data_rate", 0) for a in anomalies), default=0)
+        insights.append(
+            f"{len(anomalies)} anomalies detected with peak anomaly value {_fmt(max_anomaly)}, indicating irregular behavior."
+        )
 
-        if corr_value > 0.5:
-            insights.append("Data flow increases over time (positive correlation)")
-        elif corr_value < -0.5:
-            insights.append("Data flow decreases over time (negative correlation)")
-        else:
-            insights.append("No strong correlation between time and data flow")
+    mean_value = distribution.get("mean", 0)
+    variance = distribution.get("variance", 0)
+    insights.append(
+        f"Average data rate is {_fmt(mean_value)} with variance {_fmt(variance)}."
+    )
 
-    # If no issues
-    if not insights:
-        insights.append("System appears stable with no major anomalies")
+    if trend == "increasing":
+        insights.append("Trend is increasing, which suggests system risk is growing over time.")
+    elif trend == "decreasing":
+        insights.append("Trend is decreasing, which suggests gradual improvement in load behavior.")
+    else:
+        insights.append("Trend is stable, indicating consistent behavior without long-term drift.")
 
     return insights

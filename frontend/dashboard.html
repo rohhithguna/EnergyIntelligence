@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Flow Intelligence - Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <h1>Dashboard</h1>
+      <nav>
+        <a href="/index.html">Upload</a>
+        <a class="active" href="/dashboard.html">Dashboard</a>
+        <a href="/report.html">Report</a>
+        <a href="/comparison.html">Comparison</a>
+        <a href="/index.html" class="btn-add-dataset">+ Add Dataset</a>
+      </nav>
+    </header>
+
+    <div id="empty-state" class="empty-state" style="display:none;">
+      <p>No data loaded. Upload a dataset to begin.</p>
+    </div>
+
+    <div id="dashboard-content" style="display:none;">
+      <div class="metrics-inline">
+        <div class="metric-line">
+          <span class="metric-label">Spikes</span>
+          <span class="metric-value" id="metric-spikes">-</span>
+        </div>
+        <div class="metric-line">
+          <span class="metric-label">Drops</span>
+          <span class="metric-value" id="metric-drops">-</span>
+        </div>
+        <div class="metric-line">
+          <span class="metric-label">Anomalies</span>
+          <span class="metric-value" id="metric-anomalies">-</span>
+        </div>
+        <div class="metric-line">
+          <span class="metric-label">Quality</span>
+          <span class="metric-value" id="metric-quality">-</span>
+        </div>
+      </div>
+
+      <div class="section-spacer"></div>
+
+      <section class="section">
+        <h2>Report Header</h2>
+        <div class="report-meta">
+          <div><span class="meta-key">Dataset:</span> <span id="meta-dataset">-</span></div>
+          <div><span class="meta-key">Time Range:</span> <span id="meta-time-range">-</span></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>System Status</h2>
+        <div id="system-status" class="status-text">-</div>
+      </section>
+
+      <section class="section">
+        <h2>Key Findings</h2>
+        <ul id="key-findings" class="findings-list"></ul>
+      </section>
+
+      <section class="section">
+        <h2>Analysis Graph</h2>
+        <svg id="graph" viewBox="0 0 900 260" preserveAspectRatio="none"></svg>
+        <div class="legend">
+          <span><b>▲</b> Spike</span>
+          <span><b>▼</b> Drop</span>
+          <span><b>●</b> Anomaly</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Recommendations</h2>
+        <ul id="recommendations" class="findings-list"></ul>
+      </section>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

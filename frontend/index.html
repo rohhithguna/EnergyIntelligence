@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Flow Intelligence - Upload</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <h1>Data Flow Intelligence</h1>
+      <nav>
+        <a class="active" href="/index.html">Upload</a>
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/report.html">Report</a>
+        <a href="/comparison.html">Comparison</a>
+      </nav>
+    </header>
+
+    <div class="upload-split">
+      <div class="upload-left">
+        <div class="upload-preview">
+          <p class="preview-text">Files will be analyzed here</p>
+        </div>
+      </div>
+      <div class="upload-right">
+        <h2>Upload Dataset</h2>
+        <p class="upload-desc">Analyze data patterns and anomalies</p>
+        
+        <div class="domain-selector">
+          <label for="domain-select">Select Domain:</label>
+          <select id="domain-select">
+            <option value="generic">Generic (No schema required)</option>
+            <option value="network_traffic">Network Traffic</option>
+            <option value="server_logs">Server Logs</option>
+            <option value="finance_transactions">Finance Transactions</option>
+            <option value="user_activity">User Activity</option>
+            <option value="iot_sensor">IoT Sensor</option>
+            <option value="web_traffic">Web Traffic</option>
+            <option value="api_logs">API Logs</option>
+            <option value="system_metrics">System Metrics</option>
+            <option value="application_logs">Application Logs</option>
+          </select>
+        </div>
+
+        <div id="domain-info" style="display:none;">
+          <div id="generic-note" class="domain-note" style="display:none;">
+            <p>No strict format required. System will auto-detect numeric columns.</p>
+          </div>
+
+          <div id="schema-requirements" style="display:none;">
+            <div class="field-group">
+              <p class="field-label">Required Fields:</p>
+              <p id="required-fields" class="field-list"></p>
+            </div>
+            <div class="field-group">
+              <p class="field-label">Optional Fields:</p>
+              <p id="optional-fields" class="field-list"></p>
+            </div>
+          </div>
+
+          <div id="sample-format" class="sample-format" style="display:none;">
+            <p class="sample-label">Example format:</p>
+            <pre id="sample-content"></pre>
+          </div>
+        </div>
+
+        <div class="upload-box">
+          <form id="upload-form">
+            <input id="file-input" name="file" type="file" accept=".csv,.xlsx,.xls" required>
+            <label for="file-input" class="file-label"><span id="file-label-text">Select file or drag here</span></label>
+            <button id="analyze-btn" type="submit" class="btn-primary" disabled>Analyze</button>
+          </form>
+          <p class="file-formats">CSV, XLSX, XLS</p>
+        </div>
+        
+        <div id="validation-feedback" style="display:none;">
+          <div id="validation-status" class="validation-status"></div>
+        </div>
+        
+        <div id="status" class="status"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

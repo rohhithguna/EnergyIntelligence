@@ -1,0 +1,52 @@
+{
+  "generic": {
+    "required": [],
+    "optional": ["time", "data_rate", "value", "timestamp"],
+    "description": "No specific schema required"
+  },
+  "network_traffic": {
+    "required": ["time", "source_ip", "destination_ip", "bytes_transferred"],
+    "optional": ["protocol", "port"],
+    "description": "Network traffic analysis"
+  },
+  "server_logs": {
+    "required": ["timestamp", "log_level", "message"],
+    "optional": ["service", "source"],
+    "description": "Server log events"
+  },
+  "finance_transactions": {
+    "required": ["time", "amount", "transaction_type"],
+    "optional": ["account_id", "currency"],
+    "description": "Financial transaction data"
+  },
+  "user_activity": {
+    "required": ["time", "user_id", "action"],
+    "optional": ["device", "location"],
+    "description": "User behavior tracking"
+  },
+  "iot_sensor": {
+    "required": ["time", "sensor_id", "value"],
+    "optional": ["location", "unit"],
+    "description": "IoT sensor measurements"
+  },
+  "web_traffic": {
+    "required": ["time", "url", "response_time"],
+    "optional": ["status_code", "method"],
+    "description": "Website traffic analysis"
+  },
+  "api_logs": {
+    "required": ["time", "endpoint", "response_time"],
+    "optional": ["status", "method"],
+    "description": "API request logs"
+  },
+  "system_metrics": {
+    "required": ["time", "cpu_usage", "memory_usage"],
+    "optional": ["disk_usage", "network"],
+    "description": "System performance metrics"
+  },
+  "application_logs": {
+    "required": ["time", "event", "status"],
+    "optional": ["module", "severity"],
+    "description": "Application event logs"
+  }
+}

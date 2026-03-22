@@ -1,0 +1,90 @@
+{
+  "server_logs": {
+    "required": ["time", "status_code", "response_time"],
+    "optional": ["endpoint", "method", "user_agent"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "status_code": 200,
+      "response_time": 120,
+      "endpoint": "/api/users"
+    }
+  },
+  "network_traffic": {
+    "required": ["time", "source_ip", "destination_ip", "bytes_transferred"],
+    "optional": ["protocol", "port"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "source_ip": "192.168.1.1",
+      "destination_ip": "192.168.1.2",
+      "bytes_transferred": 1024
+    }
+  },
+  "system_metrics": {
+    "required": ["time", "cpu_usage", "memory_usage"],
+    "optional": ["disk_usage", "network_io"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "cpu_usage": 45.5,
+      "memory_usage": 62.3
+    }
+  },
+  "finance_transactions": {
+    "required": ["time", "amount", "transaction_type"],
+    "optional": ["account_id", "merchant"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "amount": 150.50,
+      "transaction_type": "purchase"
+    }
+  },
+  "user_activity": {
+    "required": ["time", "user_id", "action"],
+    "optional": ["page", "duration"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "user_id": "user_123",
+      "action": "login"
+    }
+  },
+  "iot_sensor": {
+    "required": ["time", "sensor_id", "value"],
+    "optional": ["unit", "location"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "sensor_id": "sensor_001",
+      "value": 23.5
+    }
+  },
+  "web_traffic": {
+    "required": ["time", "url", "visitor_count"],
+    "optional": ["referrer", "country"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "url": "/home",
+      "visitor_count": 150
+    }
+  },
+  "api_logs": {
+    "required": ["time", "endpoint", "status"],
+    "optional": ["latency", "error_code"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "endpoint": "/api/data",
+      "status": "success"
+    }
+  },
+  "application_logs": {
+    "required": ["time", "level", "message"],
+    "optional": ["module", "error_code"],
+    "sample": {
+      "time": "2024-01-01 00:00:00",
+      "level": "INFO",
+      "message": "Application started"
+    }
+  },
+  "generic": {
+    "required": [],
+    "optional": [],
+    "sample": {}
+  }
+}

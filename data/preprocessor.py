@@ -1,26 +1,30 @@
 import pandas as pd
 
+
 def preprocess_data(df):
-    # remove empty rows
-    df = df.dropna(how='all')
+    out = df.copy(deep=True)
+    out.columns = [str(c).strip().lower().replace(" ", "_") for c in out.columns]
 
-    # convert time column
-    df['time'] = pd.to_datetime(df['time'], errors='coerce')
+    if "data_rate" not in out.columns and "usage" in out.columns:
+        out = out.rename(columns={"usage": "data_rate"})
 
-    # remove invalid time rows
-    df = df.dropna(subset=['time'])
+    time_col = None
+    for c in ["time", "timestamp", "datetime", "event_time", "date"]:
+        if c in out.columns:
+            time_col = c
+            break
 
-    # handle missing values
-    df['data_rate'] = df['data_rate'].fillna(method='ffill')
-    df['data_rate'] = df['data_rate'].fillna(method='bfill')
+    if time_col is None:
+        raise ValueError("No valid time column found")
 
-    # remove duplicates
-    df = df.drop_duplicates()
+    out = out.rename(columns={time_col: "time"})
+    out["time"] = pd.to_datetime(out["time"], errors="coerce")
+    out["data_rate"] = pd.to_numeric(out["data_rate"], errors="coerce")
 
-    # remove invalid values
-    df = df[df['data_rate'] >= 0]
-
-    # sort data
-    df = df.sort_values(by='time')
-
-    return df
+    out = out.dropna(subset=["time"])
+    out = out.sort_values("time")
+    out["data_rate"] = out["data_rate"].ffill().bfill()
+    out = out.dropna(subset=["data_rate"])
+    out = out.drop_duplicates(subset=["time"])
+    out = out.reset_index(drop=True)
+    return out
