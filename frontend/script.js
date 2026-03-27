@@ -1,21 +1,8 @@
-// GLOBAL ERROR HANDLER
-window.addEventListener("error", (event) => {
-  console.error("Global error:", event.error);
-  const statusDiv = document.getElementById("status");
-  if (statusDiv) {
-    statusDiv.className = "status error";
-    statusDiv.textContent = "System error: " + (event.error?.message || "Unknown error");
-  }
-});
+const STORAGE_KEY_RESULT = "dfis_latest";
+const STORAGE_KEY_META = "dfis_report_meta";
+const STORAGE_KEY_HISTORY = "dfis_report_history";
 
-window.addEventListener("unhandledrejection", (event) => {
-  console.error("Unhandled promise rejection:", event.reason);
-  const statusDiv = document.getElementById("status");
-  if (statusDiv) {
-    statusDiv.className = "status error";
-    statusDiv.textContent = "Network error: " + (event.reason?.message || "Request failed");
-  }
-});
+let DOMAIN_CONFIG = {};
 
 function escapeHtml(value) {
   return String(value)
@@ -31,46 +18,59 @@ function detectPage() {
   if (document.getElementById("dashboard-content")) return "dashboard";
   if (document.getElementById("report-content")) return "report";
   if (document.getElementById("comparison-content")) return "comparison";
+  if (document.getElementById("ai-insights-content")) return "ai";
   return "unknown";
-}
-
-function getReportHistory() {
-  try {
-    return JSON.parse(localStorage.getItem("REPORT_HISTORY") || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function setReportHistory(history) {
-  localStorage.setItem("REPORT_HISTORY", JSON.stringify(history));
 }
 
 function getStoredResult() {
   try {
-    return JSON.parse(localStorage.getItem("dfis_latest") || "null");
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_RESULT) || "null");
   } catch {
     return null;
   }
 }
 
 function setStoredResult(data) {
-  localStorage.setItem("dfis_latest", JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY_RESULT, JSON.stringify(data || null));
 }
 
-function setReportMeta(meta) {
-  localStorage.setItem("dfis_report_meta", JSON.stringify(meta));
-}
-
-function getReportMeta() {
+function getStoredMeta() {
   try {
-    return JSON.parse(localStorage.getItem("dfis_report_meta") || "null") || {};
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_META) || "{}");
   } catch {
     return {};
   }
 }
 
-async function getLatestResult() {
+function setStoredMeta(meta) {
+  localStorage.setItem(STORAGE_KEY_META, JSON.stringify(meta || {}));
+}
+
+function getHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function setHistory(history) {
+  localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history || []));
+}
+
+function addToHistory(name, domain, result) {
+  const history = getHistory();
+  history.push({
+    id: `r_${Date.now()}`,
+    name,
+    domain,
+    created_at: new Date().toISOString(),
+    result,
+  });
+  setHistory(history.slice(-30));
+}
+
+async function fetchLatestResult() {
   const res = await fetch("/api/latest");
   if (!res.ok) {
     throw new Error("No analysis found. Upload a file first.");
@@ -80,198 +80,200 @@ async function getLatestResult() {
   return data;
 }
 
-function metricCard(label, value) {
-  return `<div class="metric"><div class="k">${escapeHtml(label)}</div><div class="v">${escapeHtml(value)}</div></div>`;
-}
-
-function qualityLabel(score) {
-  const n = Number(score || 0);
-  if (n >= 90) return "Excellent";
-  if (n >= 75) return "Good";
-  if (n >= 55) return "Fair";
-  return "Poor";
-}
-
-function riskLabel(level) {
-  const l = String(level || "").toLowerCase();
-  if (l === "low") return "Low concern";
-  if (l === "medium") return "Moderate concern";
-  if (l === "high") return "High concern";
-  return "Unknown concern";
-}
-
-function computeSystemStatus(data) {
-  const counts = data.counts || { spikes: 0, drops: 0, anomalies: 0 };
-  const spikes = Number(counts.spikes || 0);
-  const drops = Number(counts.drops || 0);
-  const anomalies = Number(counts.anomalies || 0);
-  const risk = String(data.risk || "").toLowerCase();
-
-  if (risk === "high" || anomalies >= 5 || spikes + drops >= 14) {
-    return {
-      status: "CRITICAL",
-      reason: "High risk with frequent abnormal events detected.",
-      meaning: "This system is currently critical and needs immediate attention to avoid service impact.",
-      css: "critical",
-    };
-  }
-
-  if (risk === "medium" || anomalies >= 2 || spikes + drops >= 4) {
-    return {
-      status: "UNSTABLE",
-      reason: "Moderate anomalies and spikes detected.",
-      meaning: "This system is mostly stable but shows occasional disruptions indicating temporary issues.",
-      css: "unstable",
-    };
-  }
-
-  return {
-    status: "STABLE",
-    reason: "No major anomaly pattern was detected.",
-    meaning: "The system behavior is stable with normal variation.",
-    css: "stable",
-  };
-}
-
-function formatGenerated(value) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
-}
-
 function formatTimeRange(seriesTime) {
   if (!Array.isArray(seriesTime) || seriesTime.length === 0) return "-";
   return `${seriesTime[0]} to ${seriesTime[seriesTime.length - 1]}`;
 }
 
-function executiveSummary(data, statusInfo) {
-  const counts = data.counts || { spikes: 0, drops: 0, anomalies: 0 };
-  const trend = data.trend || "stable";
-  const confidenceText = data?.confidence?.text || "Confidence: unavailable";
-  return `The system shows ${statusInfo.status.toLowerCase()} behavior with ${counts.spikes} spikes, ${counts.drops} drops, and ${counts.anomalies} anomalies. Overall trend is ${trend}, with ${statusInfo.reason.toLowerCase()}. ${confidenceText}.`;
+function severityClass(severity) {
+  const s = String(severity || "").toLowerCase();
+  if (s === "critical") return "sev-critical";
+  if (s === "high") return "sev-high";
+  if (s === "medium") return "sev-medium";
+  return "sev-low";
 }
 
-function keyFindings(data) {
-  const counts = data.counts || { spikes: 0, drops: 0, anomalies: 0 };
-  const timeAnalysis = data.time_analysis || {};
-  const distribution = data.distribution || {};
-  return [
-    `Spikes: ${counts.spikes} spike events indicate sudden load increases.`,
-    `Drops: ${counts.drops} drop events indicate temporary reductions or interruptions.`,
-    `Anomalies: ${counts.anomalies} anomalies indicate behavior outside normal patterns.`,
-    `Trend: ${data.trend || "stable"} trend indicates overall directional behavior.`,
-    `Peak interval: ${timeAnalysis.frequent_spike_period || "No peak interval detected."}`,
-    `Distribution: mean ${Number(distribution.mean || 0).toFixed(2)}, median ${Number(distribution.median || 0).toFixed(2)}, variance ${Number(distribution.variance || 0).toFixed(2)}.`,
-  ];
+function urgencyClass(urgency) {
+  const u = String(urgency || "").toLowerCase();
+  if (u === "immediate") return "urg-immediate";
+  if (u === "high") return "urg-immediate";
+  if (u === "medium") return "urg-monitor";
+  return "urg-low";
 }
 
-function riskJustification(data, statusInfo) {
-  const risk = String(data.risk || "unknown").toLowerCase();
-  const counts = data.counts || { spikes: 0, drops: 0, anomalies: 0 };
-  return `Risk is ${risk} because the system recorded ${counts.spikes} spikes, ${counts.drops} drops, and ${counts.anomalies} anomalies. This supports a ${statusInfo.status.toLowerCase()} classification.`;
+function statusClass(systemStatus) {
+  const s = String(systemStatus || "").toUpperCase();
+  if (s === "CRITICAL") return "sev-critical";
+  if (s === "WARNING") return "sev-high";
+  return "sev-low";
 }
 
-async function loadComparisonSection() {
-  const summaryEl = document.getElementById("comparison-summary");
-  const listEl = document.getElementById("comparison-list");
-  if (!summaryEl || !listEl) return;
+function computeSystemStatus(data) {
+  const counts = data?.counts || { spikes: 0, drops: 0, anomalies: 0 };
+  const totalSignals = Number(counts.spikes || 0) + Number(counts.drops || 0) + Number(counts.anomalies || 0);
+  const risk = String(data?.risk || "").toLowerCase();
 
-  try {
-    const res = await fetch("/api/compare");
-    const comparison = await res.json();
-
-    summaryEl.textContent = comparison.summary || comparison.message || "Comparison unavailable.";
-    const items = Array.isArray(comparison.items) ? comparison.items : [];
-    listEl.innerHTML = items.length
-      ? items.map((item) => `<li>${escapeHtml(item.dataset)}: stability ${escapeHtml(item.stability)}, risk ${escapeHtml(item.risk)}, anomalies ${Number(item.anomalies || 0)}, variance ${Number(item.variance || 0).toFixed(2)}</li>`).join("")
-      : "<li>Upload at least two datasets to compare.</li>";
-  } catch {
-    summaryEl.textContent = "Comparison unavailable.";
-    listEl.innerHTML = "<li>Could not load comparison.</li>";
-  }
+  if (risk === "high" || totalSignals >= 12) return "CRITICAL";
+  if (risk === "medium" || totalSignals >= 5) return "UNSTABLE";
+  return "STABLE";
 }
 
-let DOMAIN_CONFIG = {};
+function drawGraph(series, spikes, drops, anomalies) {
+  const graph = document.getElementById("graph");
+  if (!graph) return;
 
-fetch("domains.json")
-  .then(r => r.json())
-  .then(data => {
-    DOMAIN_CONFIG = data;
-    console.log("domains loaded", DOMAIN_CONFIG);
-  })
-  .catch(e => console.error("domain load failed", e));
+  graph.innerHTML = "";
 
-function updateDomainUI(domainKey) {
-  console.log("selected domain:", domainKey);
+  const values = Array.isArray(series) ? series.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [];
+  if (!values.length) return;
 
-  const config = DOMAIN_CONFIG[domainKey];
-  const domainInfo = document.getElementById("domain-info");
-  const genericNote = document.getElementById("generic-note");
-  const schemaRequirements = document.getElementById("schema-requirements");
-  const sampleFormat = document.getElementById("sample-format");
-  const requiredFields = document.getElementById("required-fields");
-  const optionalFields = document.getElementById("optional-fields");
-  const sampleContent = document.getElementById("sample-content");
+  const width = 900;
+  const height = 260;
+  const pad = 24;
 
-  if (!config) {
-    console.error("domain config missing");
-    if (domainInfo) domainInfo.style.display = "none";
-    return;
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    min -= 1;
+    max += 1;
   }
 
-  // Always show domain-info
-  if (domainInfo) domainInfo.style.display = "block";
+  const point = (i, v) => {
+    const x = pad + (i * (width - 2 * pad)) / Math.max(values.length - 1, 1);
+    const y = pad + ((max - v) * (height - 2 * pad)) / (max - min);
+    return { x, y };
+  };
 
-  if (domainKey === "generic") {
-    // Generic domain: show note, hide schema
-    if (genericNote) genericNote.style.display = "block";
-    if (schemaRequirements) schemaRequirements.style.display = "none";
-    if (sampleFormat) sampleFormat.style.display = "none";
-  } else {
-    // Schema domains: hide note, show schema and sample
-    if (genericNote) genericNote.style.display = "none";
-    if (schemaRequirements) schemaRequirements.style.display = "block";
-    if (sampleFormat) sampleFormat.style.display = "block";
+  const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  polyline.setAttribute(
+    "points",
+    values
+      .map((v, i) => {
+        const p = point(i, v);
+        return `${p.x},${p.y}`;
+      })
+      .join(" ")
+  );
+  polyline.setAttribute("fill", "none");
+  polyline.setAttribute("stroke", "#1b1b1b");
+  polyline.setAttribute("stroke-width", "1.6");
+  graph.appendChild(polyline);
 
-    // Populate required fields
-    if (requiredFields) {
-      requiredFields.innerText = config.required.length ? config.required.join(", ") : "(none)";
-    }
+  const addMarker = (idx, symbol, cssClass) => {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= values.length) return;
+    const p = point(idx, values[idx]);
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.textContent = symbol;
+    t.setAttribute("x", p.x);
+    t.setAttribute("y", p.y - 8);
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("class", `graph-marker ${cssClass}`);
+    graph.appendChild(t);
+  };
 
-    // Populate optional fields
-    if (optionalFields) {
-      optionalFields.innerText = config.optional.length ? config.optional.join(", ") : "(none)";
-    }
+  (spikes || []).forEach((s) => addMarker(Number(s.index), "▲", "mark-spike"));
+  (drops || []).forEach((d) => addMarker(Number(d.index), "▼", "mark-drop"));
+  (anomalies || []).forEach((a) => {
+    const idx = values.findIndex((v) => v === Number(a.data_rate));
+    addMarker(idx, "●", "mark-anomaly");
+  });
+}
 
-    // Populate sample format
-    if (sampleContent) {
-      sampleContent.innerText = Object.keys(config.sample).length ? JSON.stringify(config.sample, null, 2) : "{}";
-    }
+function ensureAiAnalysis(result) {
+  const ai = result?.ai_analysis;
+  if (ai && typeof ai === "object") return ai;
+
+  const counts = result?.counts || { spikes: 0, drops: 0, anomalies: 0 };
+  return {
+    summary: `Signals detected: ${counts.spikes} spikes, ${counts.drops} drops, ${counts.anomalies} anomalies.`,
+    affected_layer: "processing",
+    root_cause: "AI analysis unavailable in current payload.",
+    severity: "medium",
+    impact: "Signal-level analytics are present but AI-generated diagnostics are unavailable.",
+    recommendations: ["Retry AI analysis endpoint with current signal payload."],
+    urgency: "medium",
+    confidence: "medium",
+    system_status: "WARNING",
+    diagnosis: "AI diagnostics unavailable; using local fallback interpretation.",
+    decision: {
+      action_required: true,
+      priority: "medium",
+      next_step: "Retry AI analysis endpoint.",
+    },
+    actions: [
+      {
+        label: "Retry Analysis",
+        type: "test",
+        description: "Re-run AI analysis endpoint with the latest signal payload.",
+      },
+    ],
+    source: "local_fallback",
+  };
+}
+
+async function fetchAiAnalysisFromApi(result) {
+  const payload = {
+    data: {
+      spikes: result?.spikes || [],
+      drops: result?.drops || [],
+      anomalies: result?.anomalies || [],
+      counts: result?.counts || {},
+      trend: result?.trend || "stable",
+      risk_score: Number(result?.risk_score || 0),
+      quality: Number(result?.quality || 0),
+      distribution: result?.distribution || {},
+    },
+  };
+
+  const res = await fetch("/api/ai-analysis", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error("AI analysis endpoint failed");
   }
+
+  const data = await res.json();
+  if (!data || typeof data.ai_analysis !== "object") {
+    throw new Error("AI analysis endpoint returned invalid response");
+  }
+
+  return data.ai_analysis;
+}
+
+function renderEmptyState(emptyStateId, contentId) {
+  const empty = document.getElementById(emptyStateId);
+  const content = document.getElementById(contentId);
+  if (empty) empty.style.display = "block";
+  if (content) content.style.display = "none";
+}
+
+function renderReadyState(emptyStateId, contentId) {
+  const empty = document.getElementById(emptyStateId);
+  const content = document.getElementById(contentId);
+  if (empty) empty.style.display = "none";
+  if (content) content.style.display = "block";
 }
 
 async function initUpload() {
   const form = document.getElementById("upload-form");
   const fileInput = document.getElementById("file-input");
   const fileLabel = document.getElementById("file-label-text");
-  const button = document.getElementById("analyze-btn");
+  const submit = document.getElementById("analyze-btn");
   const status = document.getElementById("status");
   const domainSelect = document.getElementById("domain-select");
-  const validationFeedback = document.getElementById("validation-feedback");
-  const validationStatus = document.getElementById("validation-status");
 
-  if (fileInput) {
-    fileInput.addEventListener("change", () => {
-      if (fileInput.files && fileInput.files.length > 0) {
-        const fileName = fileInput.files[0].name;
-        if (fileLabel) fileLabel.textContent = `${fileName} selected`;
-        if (button) button.disabled = false;
-      } else {
-        if (fileLabel) fileLabel.textContent = "Select file or drag here";
-        if (button) button.disabled = true;
-      }
-    });
-  }
+  if (!form || !fileInput || !submit || !status) return;
+
+  fileInput.addEventListener("change", () => {
+    const hasFile = !!(fileInput.files && fileInput.files.length > 0);
+    submit.disabled = !hasFile;
+    if (fileLabel) {
+      fileLabel.textContent = hasFile ? `${fileInput.files[0].name} selected` : "Select file or drag here";
+    }
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -282,708 +284,493 @@ async function initUpload() {
       return;
     }
 
-    button.disabled = true;
+    submit.disabled = true;
     status.className = "status";
-    status.textContent = "Running pipeline...";
-    if (validationFeedback) validationFeedback.style.display = "none";
+    status.textContent = "Analyzing dataset...";
 
     try {
+      const file = fileInput.files[0];
+      const domain = domainSelect ? domainSelect.value : "generic";
       const body = new FormData();
-      const selectedFile = fileInput.files[0];
-      const selectedDomain = domainSelect ? domainSelect.value : "generic";
-      
-      body.append("file", selectedFile);
-      body.append("domain", selectedDomain);
+      body.append("file", file);
+      body.append("domain", domain);
 
-      const res = await fetch("/upload", {
-        method: "POST",
-        body,
-      });
-
+      const res = await fetch("/upload", { method: "POST", body });
       const data = await res.json();
-      
+
       if (!res.ok) {
-        if (data.validation_error) {
-          if (validationFeedback && validationStatus) {
-            validationStatus.className = "validation-status invalid";
-            validationStatus.textContent = data.error || "Dataset does not match selected domain schema";
-            validationFeedback.style.display = "block";
-          }
-          status.textContent = "";
-        } else {
-          throw new Error(data.error || "Analysis failed");
+        throw new Error(data?.error || "Upload failed");
+      }
+
+      if (!data?.ai_analysis) {
+        try {
+          data.ai_analysis = await fetchAiAnalysisFromApi(data);
+        } catch {
+          data.ai_analysis = ensureAiAnalysis(data);
         }
-        button.disabled = false;
-        return;
       }
 
-      if (validationFeedback && validationStatus) {
-        validationStatus.className = "validation-status valid";
-        validationStatus.textContent = "Dataset matches selected domain";
-        validationFeedback.style.display = "block";
-      }
-
-      const reportId = "report_" + Date.now();
-      const history = getReportHistory();
-      history.push({
-        id: reportId,
-        name: selectedFile.name,
-        domain: selectedDomain,
-        created_at: new Date().toISOString(),
-        result: data
-      });
-      setReportHistory(history);
       setStoredResult(data);
-      setReportMeta({
-        datasetName: selectedFile.name,
-        domain: selectedDomain,
+      setStoredMeta({
+        datasetName: file.name,
+        domain,
         generatedAt: new Date().toISOString(),
       });
+      addToHistory(file.name, domain, data);
 
-      status.className = "status";
-      status.textContent = "Report generated successfully";
-      
+      if (String(data?.ai_analysis?.error || "") === "AI service not configured") {
+        status.className = "status error";
+        status.textContent = "AI insights unavailable";
+      } else {
+        status.className = "status";
+        status.textContent = "Analysis completed.";
+      }
+
       window.setTimeout(() => {
         window.location.href = "/dashboard.html";
-      }, 1000);
+      }, 650);
     } catch (error) {
       status.className = "status error";
       status.textContent = error.message || "Analysis failed";
-      button.disabled = false;
+      submit.disabled = false;
     }
   });
+
+  loadDomainConfig();
+  if (domainSelect) {
+    domainSelect.addEventListener("change", () => updateDomainUI(domainSelect.value));
+    setTimeout(() => updateDomainUI(domainSelect.value), 150);
+  }
 }
 
+function updateDomainUI(domainKey) {
+  const config = DOMAIN_CONFIG[domainKey];
+  const domainInfo = document.getElementById("domain-info");
+  const genericNote = document.getElementById("generic-note");
+  const schemaReq = document.getElementById("schema-requirements");
+  const sampleFormat = document.getElementById("sample-format");
+  const requiredFields = document.getElementById("required-fields");
+  const optionalFields = document.getElementById("optional-fields");
+  const sampleContent = document.getElementById("sample-content");
 
-async function initDashboard() {
-  const emptyState = document.getElementById("empty-state");
-  const dashboardContent = document.getElementById("dashboard-content");
+  if (!domainInfo) return;
+  domainInfo.style.display = "block";
 
-  let data = getStoredResult();
-
-  if (!data) {
-    try {
-      data = await getLatestResult();
-    } catch {
-      if (emptyState) emptyState.style.display = "block";
-      if (dashboardContent) dashboardContent.style.display = "none";
-      return;
-    }
-  }
-
-  if (!data || !data.counts) {
-    if (emptyState) emptyState.style.display = "block";
-    if (dashboardContent) dashboardContent.style.display = "none";
+  if (!config || domainKey === "generic") {
+    if (genericNote) genericNote.style.display = "block";
+    if (schemaReq) schemaReq.style.display = "none";
+    if (sampleFormat) sampleFormat.style.display = "none";
     return;
   }
 
-  if (emptyState) emptyState.style.display = "none";
-  if (dashboardContent) dashboardContent.style.display = "block";
+  if (genericNote) genericNote.style.display = "none";
+  if (schemaReq) schemaReq.style.display = "block";
+  if (sampleFormat) sampleFormat.style.display = "block";
+  if (requiredFields) requiredFields.textContent = (config.required || []).join(", ") || "(none)";
+  if (optionalFields) optionalFields.textContent = (config.optional || []).join(", ") || "(none)";
+  if (sampleContent) sampleContent.textContent = JSON.stringify(config.sample || {}, null, 2);
+}
+
+function loadDomainConfig() {
+  fetch("/domains.json")
+    .then((res) => res.json())
+    .then((data) => {
+      DOMAIN_CONFIG = data || {};
+    })
+    .catch(() => {
+      DOMAIN_CONFIG = {};
+    });
+}
+
+async function resolveResultOrEmpty(emptyStateId, contentId) {
+  let result = getStoredResult();
+
+  if (!result) {
+    try {
+      result = await fetchLatestResult();
+    } catch {
+      renderEmptyState(emptyStateId, contentId);
+      return null;
+    }
+  }
+
+  if (!result || typeof result !== "object") {
+    renderEmptyState(emptyStateId, contentId);
+    return null;
+  }
+
+  renderReadyState(emptyStateId, contentId);
+  return result;
+}
+
+async function initDashboard() {
+  const result = await resolveResultOrEmpty("empty-state", "dashboard-content");
+  if (!result) return;
+
+  const counts = result.counts || { spikes: 0, drops: 0, anomalies: 0 };
+  const ai = ensureAiAnalysis(result);
+  const meta = getStoredMeta();
 
   const metricSpikes = document.getElementById("metric-spikes");
   const metricDrops = document.getElementById("metric-drops");
   const metricAnomalies = document.getElementById("metric-anomalies");
   const metricQuality = document.getElementById("metric-quality");
-  const metaDataset = document.getElementById("meta-dataset");
-  const metaTimeRange = document.getElementById("meta-time-range");
-  const systemStatus = document.getElementById("system-status");
-  const findingsEl = document.getElementById("key-findings");
-  const recommendationsEl = document.getElementById("recommendations");
+  const dataset = document.getElementById("meta-dataset");
+  const timeRange = document.getElementById("meta-time-range");
+  const status = document.getElementById("system-status");
+  const findings = document.getElementById("key-findings");
+  const recommendations = document.getElementById("recommendations");
 
-  const counts = data.counts || { spikes: 0, drops: 0, anomalies: 0 };
-  if (metricSpikes) metricSpikes.textContent = counts.spikes || 0;
-  if (metricDrops) metricDrops.textContent = counts.drops || 0;
-  if (metricAnomalies) metricAnomalies.textContent = counts.anomalies || 0;
-  if (metricQuality) metricQuality.textContent = `${data.quality || 0}`;
+  if (metricSpikes) metricSpikes.textContent = String(counts.spikes || 0);
+  if (metricDrops) metricDrops.textContent = String(counts.drops || 0);
+  if (metricAnomalies) metricAnomalies.textContent = String(counts.anomalies || 0);
+  if (metricQuality) metricQuality.textContent = String(result.quality || 0);
+  if (dataset) dataset.textContent = meta.datasetName || result.dataset_name || "Uploaded Dataset";
+  if (timeRange) timeRange.textContent = formatTimeRange(result?.series?.time || []);
+  if (status) status.textContent = `System Status: ${computeSystemStatus(result)}`;
 
-  const meta = getReportMeta();
-  if (metaDataset) metaDataset.textContent = meta.datasetName || "Uploaded Dataset";
-  if (metaTimeRange) metaTimeRange.textContent = formatTimeRange(data?.series?.time || []);
-
-  const info = computeSystemStatus(data);
-  if (systemStatus) systemStatus.textContent = `System Status: ${info.status}`;
-  if (findingsEl) findingsEl.innerHTML = keyFindings(data).map((x) => `<li>${escapeHtml(x)}</li>`).join("");
-  if (recommendationsEl) {
-    const recs = data.recommendations || [];
-    recommendationsEl.innerHTML = recs.length
-      ? recs.map((x) => `<li>${escapeHtml(x)}</li>`).join("")
-      : [
-          "Reduce load during peak times.",
-          "Check system stability and service health.",
-          "Inspect logs for unusual patterns.",
-        ].map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+  if (findings) {
+    const keyFindings = [
+      `Trend: ${result.trend || "stable"}`,
+      `Risk score: ${Number(result.risk_score || 0)}`,
+      `AI severity: ${String(ai.severity || "medium")}`,
+      `AI root cause: ${String(ai.root_cause || "n/a")}`,
+      `Distribution variance: ${Number(result?.distribution?.variance || 0).toFixed(2)}`,
+    ];
+    findings.innerHTML = keyFindings.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
   }
 
-  drawGraph(
-    (data.series && data.series.data_rate ? data.series.data_rate : []).map((x) => Number(x)),
-    (data.series && data.series.time ? data.series.time : []),
-    data.spikes || [],
-    data.drops || [],
-    data.anomalies || []
-  );
-}
-
-function eventExplanation(event) {
-  if (event.type === "spike") {
-    return "A spike means sudden traffic/load increase that may indicate overload or burst activity.";
-  }
-  if (event.type === "drop") {
-    return "A drop means sudden traffic/load decrease that may indicate interruption or temporary failure.";
-  }
-  return "An anomaly means behavior that does not match normal pattern and should be investigated.";
-}
-
-function renderEventExplorer(events) {
-  const list = document.getElementById("event-list");
-  const detail = document.getElementById("event-detail");
-  if (!list || !detail) return;
-
-  if (!events.length) {
-    list.innerHTML = "<li>No events detected.</li>";
-    detail.textContent = "No event explanation available.";
-    return;
+  if (recommendations) {
+    const recs = Array.isArray(ai.recommendations) ? ai.recommendations : [];
+    recommendations.innerHTML = recs.length
+      ? recs.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+      : "<li>No recommendation available.</li>";
   }
 
-  list.innerHTML = events
-    .map((e, i) => {
-      const symbol = e.type === "spike" ? "▲" : e.type === "drop" ? "▼" : "●";
-      return `<li data-event-index="${i}">${symbol} ${escapeHtml(e.type.toUpperCase())} at ${escapeHtml(e.time)} (${Number(e.value).toFixed(2)}) - ${escapeHtml(String(e.severity || "minor"))}</li>`;
-    })
-    .join("");
-
-  list.querySelectorAll("li[data-event-index]").forEach((node) => {
-    node.addEventListener("click", () => {
-      const idx = Number(node.getAttribute("data-event-index"));
-      const e = events[idx];
-      detail.textContent = `${e.type.toUpperCase()} EVENT (${String(e.severity || "minor").toUpperCase()}): ${eventExplanation(e)} Time: ${e.time}. Value: ${Number(e.value).toFixed(2)}.`;
-    });
-  });
-}
-
-function drawGraph(series, seriesTime, spikes, drops, anomalies) {
-  const graph = document.getElementById("graph");
-  graph.innerHTML = "";
-
-  if (!series || series.length === 0) {
-    return;
-  }
-
-  const width = 900;
-  const height = 260;
-  const pad = 20;
-  let min = Math.min(...series);
-  let max = Math.max(...series);
-
-  if (min === max) {
-    min -= 1;
-    max += 1;
-  }
-
-  const toPoint = (idx, val) => {
-    const x = pad + (idx * (width - pad * 2)) / Math.max(series.length - 1, 1);
-    const y = pad + ((max - val) * (height - pad * 2)) / (max - min);
-    return { x, y };
-  };
-
-  const points = series.map((val, idx) => {
-    const p = toPoint(idx, Number(val));
-    return `${p.x},${p.y}`;
-  });
-
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  path.setAttribute("points", points.join(" "));
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "#111111");
-  path.setAttribute("stroke-width", "1.7");
-  graph.appendChild(path);
-
-  const events = [];
-
-  function marker(index, value, symbol, color, type, time) {
-    if (index < 0 || index >= series.length) return;
-    const p = toPoint(index, Number(value));
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", p.x);
-    text.setAttribute("y", p.y - 8);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("fill", color);
-    text.setAttribute("font-size", "13");
-    text.setAttribute("class", "marker");
-    text.textContent = symbol;
-
-    const eventObj = {
-      type,
-      time: time || (seriesTime[index] || `Index ${index}`),
-      value: Number(value),
-      severity: itemSeverity(type, Number(value), series),
-    };
-    text.addEventListener("click", () => {
-      const detail = document.getElementById("event-detail");
-      if (detail) {
-        detail.textContent = `${eventObj.type.toUpperCase()} EVENT (${String(eventObj.severity || "minor").toUpperCase()}): ${eventExplanation(eventObj)} Time: ${eventObj.time}. Value: ${Number(eventObj.value).toFixed(2)}.`;
-      }
-    });
-
-    events.push(eventObj);
-    graph.appendChild(text);
-  }
-
-  spikes.forEach((item) => marker(Number(item.index), Number(item.data_rate), "▲", "#000000", "spike", item.time));
-  drops.forEach((item) => marker(Number(item.index), Number(item.data_rate), "▼", "#6f6f6f", "drop", item.time));
-
-  anomalies.forEach((item) => {
-    const index = series.findIndex((v) => Number(v) === Number(item.data_rate));
-    marker(index, Number(item.data_rate), "●", "#b0b0b0", "anomaly", item.time);
-  });
-
-  renderEventExplorer(events);
-}
-
-function insightCard(title, text) {
-  return `<div class="insight-card"><div class="insight-title">${escapeHtml(title)}</div><div class="insight-body">${escapeHtml(text)}</div></div>`;
-}
-
-function itemSeverity(type, value, series) {
-  const numeric = Array.isArray(series) ? series.filter((x) => Number.isFinite(Number(x))).map((x) => Number(x)) : [];
-  if (!numeric.length) return "minor";
-  const mean = numeric.reduce((a, b) => a + b, 0) / numeric.length;
-  const variance = numeric.reduce((acc, x) => acc + (x - mean) * (x - mean), 0) / numeric.length;
-  const std = Math.sqrt(Math.max(variance, 0));
-  if (!Number.isFinite(std) || std === 0) return "minor";
-  const deviation = type === "drop" ? (mean - value) / std : (value - mean) / std;
-  if (deviation >= 2.5) return "severe";
-  if (deviation >= 1.2) return "moderate";
-  return "minor";
-}
-
-function buildExportText(data) {
-  const meta = getReportMeta();
-  const status = computeSystemStatus(data);
-  const findings = keyFindings(data).map((x) => `- ${x}`).join("\n");
-  const recommendations = (data.recommendations || []).map((x) => `- ${x}`).join("\n") || "- No recommendations.";
-
-  return [
-    "Data Flow Analysis Report",
-    "",
-    `Dataset: ${meta.datasetName || data.dataset_name || "Uploaded Dataset"}`,
-    `Domain: ${meta.domain || "Generic"}`,
-    `Generated: ${formatGenerated(meta.generatedAt || new Date().toISOString())}`,
-    `Time Range: ${formatTimeRange(data?.series?.time || [])}`,
-    "",
-    "Executive Summary",
-    executiveSummary(data, status),
-    "",
-    "Key Findings",
-    findings,
-    "",
-    "Risk Justification",
-    riskJustification(data, status),
-    "",
-    "Recommendations",
-    recommendations,
-    "",
-  ].join("\n");
-}
-
-function downloadTextFile(filename, content) {
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function setupExport(data) {
-  const exportTxt = document.getElementById("export-txt");
-  const exportStructured = document.getElementById("export-structured");
-  if (!exportTxt || !exportStructured) return;
-
-  exportTxt.addEventListener("click", () => {
-    downloadTextFile("data_flow_report.txt", buildExportText(data));
-  });
-
-  exportStructured.addEventListener("click", () => {
-    const structured = buildExportText(data)
-      .replace("Data Flow Analysis Report", "DATA FLOW ANALYSIS REPORT")
-      .replace("Executive Summary", "=== EXECUTIVE SUMMARY ===")
-      .replace("Key Findings", "=== KEY FINDINGS ===")
-      .replace("Risk Justification", "=== RISK JUSTIFICATION ===")
-      .replace("Recommendations", "=== RECOMMENDATIONS ===");
-    downloadTextFile("data_flow_report_structured.txt", structured);
-  });
-}
-
-function buildInsightBlocks(insights) {
-  if (!insights.length) {
-    return insightCard("INFO", "No insights generated.");
-  }
-
-  return insights
-    .map((line) => {
-      const lower = String(line).toLowerCase();
-      if (lower.includes("spike") || lower.includes("overload")) {
-        return insightCard("OVERLOAD DETECTED", line);
-      }
-      if (lower.includes("drop") || lower.includes("interrupt")) {
-        return insightCard("INTERRUPTION DETECTED", line);
-      }
-      if (lower.includes("anomal")) {
-        return insightCard("ANOMALY DETECTED", line);
-      }
-      if (lower.includes("trend")) {
-        return insightCard("TREND UPDATE", line);
-      }
-      return insightCard("SYSTEM NOTE", line);
-    })
-    .join("");
+  drawGraph(result?.series?.data_rate || [], result.spikes || [], result.drops || [], result.anomalies || []);
 }
 
 async function initReport() {
-  const emptyState = document.getElementById("empty-state");
-  const reportContent = document.getElementById("report-content");
+  const result = await resolveResultOrEmpty("empty-state", "report-content");
+  if (!result) return;
 
-  let data = getStoredResult();
-
-  if (!data) {
-    try {
-      data = await getLatestResult();
-    } catch {
-      if (emptyState) emptyState.style.display = "block";
-      if (reportContent) reportContent.style.display = "none";
-      return;
-    }
-  }
-
-  if (!data || !data.counts) {
-    if (emptyState) emptyState.style.display = "block";
-    if (reportContent) reportContent.style.display = "none";
-    return;
-  }
-
-  if (emptyState) emptyState.style.display = "none";
-  if (reportContent) reportContent.style.display = "block";
-
+  const ai = ensureAiAnalysis(result);
   const statusBar = document.getElementById("status-bar");
-  const statusInfo = computeSystemStatus(data);
-  
+  const insights = document.getElementById("insights");
+  const recommendations = document.getElementById("recommendations");
+
   if (statusBar) {
     statusBar.innerHTML = [
-      ["Trend", data.trend || "-"],
-      ["Risk", `${data.risk || "-"} (${riskLabel(data.risk)})`],
-      ["Quality", `${data.quality || 0} (${qualityLabel(data.quality)})`],
-      ["Status", statusInfo.status],
+      ["Trend", result.trend || "stable"],
+      ["Risk", `${String(result.risk || "unknown").toUpperCase()} (${Number(result.risk_score || 0)})`],
+      ["Quality", String(result.quality || 0)],
+      ["Severity", String(ai.severity || "medium").toUpperCase()],
     ]
-      .map((item) => `<div class="status-chip"><div class="k">${escapeHtml(item[0])}</div><div class="v">${escapeHtml(item[1])}</div></div>`)
+      .map(([k, v]) => `<div class="status-chip"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v)}</div></div>`)
       .join("");
   }
 
-  const insights = data.insights || [];
-  const insightsEl = document.getElementById("insights");
-  if (insightsEl) insightsEl.innerHTML = buildInsightBlocks(insights);
-
-  const recommendationsEl = document.getElementById("recommendations");
-  if (recommendationsEl) {
-    const recs = data.recommendations || [];
-    recommendationsEl.innerHTML = recs.length
-      ? recs.map((x) => `<li>${escapeHtml(x)}</li>`).join("")
-      : [
-          "Reduce load during peak times.",
-          "Check system stability and service health.",
-          "Inspect logs for unusual patterns.",
-        ].map((x) => `<li>${escapeHtml(x)}</li>`).join("");
+  if (insights) {
+    insights.innerHTML = [
+      ["Summary", ai.summary],
+      ["Root Cause", ai.root_cause],
+      ["Impact", ai.impact],
+    ]
+      .map(([title, text]) => `<div class="insight-card"><div class="insight-title">${escapeHtml(title)}</div><div class="insight-body">${escapeHtml(text || "-")}</div></div>`)
+      .join("");
   }
 
-  drawGraph(
-    (data.series && data.series.data_rate ? data.series.data_rate : []).map((x) => Number(x)),
-    (data.series && data.series.time ? data.series.time : []),
-    data.spikes || [],
-    data.drops || [],
-    data.anomalies || []
-  );
-
-  setupExport(data);
-}
-
-let comparisonState = {
-  allReports: [],
-  selected: [],
-};
-
-async function fetchAllReports() {
-  try {
-    const res = await fetch("/api/compare");
-    const comparison = await res.json();
-    const items = Array.isArray(comparison.items) ? comparison.items : [];
-    comparisonState.allReports = items;
-    return items;
-  } catch {
-    return [];
+  if (recommendations) {
+    const recs = Array.isArray(ai.recommendations) ? ai.recommendations : [];
+    recommendations.innerHTML = recs.length
+      ? recs.map((r) => `<li>${escapeHtml(r)}</li>`).join("")
+      : "<li>No recommendation available.</li>";
   }
+
+  const events = document.getElementById("event-list");
+  if (events) {
+    const items = [
+      ...(result.spikes || []).map((s) => `Spike at ${s.time} (${Number(s.data_rate).toFixed(2)})`),
+      ...(result.drops || []).map((d) => `Drop at ${d.time} (${Number(d.data_rate).toFixed(2)})`),
+      ...(result.anomalies || []).map((a) => `Anomaly at ${a.time} (${Number(a.data_rate).toFixed(2)})`),
+    ];
+    events.innerHTML = items.length ? items.map((x) => `<li>${escapeHtml(x)}</li>`).join("") : "<li>No events detected.</li>";
+  }
+
+  const detail = document.getElementById("event-detail");
+  if (detail) {
+    detail.textContent = `Urgency: ${String(ai.urgency || "monitor")}. Source: ${String(ai.source || "unknown")}.`;
+  }
+
+  drawGraph(result?.series?.data_rate || [], result.spikes || [], result.drops || [], result.anomalies || []);
 }
 
-function renderReportsList(reports) {
-  const container = document.getElementById("reports-list");
-  if (!container) return;
+async function initAiInsights() {
+  const result = await resolveResultOrEmpty("empty-state", "ai-insights-content");
+  if (!result) return;
 
-  comparisonState.allReports = reports;
+  const apiStatus = document.getElementById("ai-api-status");
 
-  container.innerHTML = reports.length
-    ? reports
-        .map(
-          (report, idx) => `
-    <div class="report-item">
-      <input type="checkbox" id="report-${idx}" data-index="${idx}" class="report-checkbox">
-      <label for="report-${idx}">${escapeHtml(report.name)} (Domain: ${escapeHtml(report.domain || "generic")})</label>
-    </div>
-  `
-        )
-        .join("")
-    : "<p class='muted'>No reports available. Upload datasets first.</p>";
+  const renderAi = (ai) => {
+    const systemStatus = document.getElementById("ai-system-status");
+    const layer = document.getElementById("ai-layer");
+    const confidence = document.getElementById("ai-confidence");
+    const summary = document.getElementById("ai-summary");
+    const root = document.getElementById("ai-root-cause");
+    const severity = document.getElementById("ai-severity");
+    const impact = document.getElementById("ai-impact");
+    const recommendations = document.getElementById("ai-recommendations");
+    const urgency = document.getElementById("ai-urgency");
+    const nextStep = document.getElementById("ai-next-step");
+    const actions = document.getElementById("ai-actions");
 
-  container.querySelectorAll(".report-checkbox").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      handleReportSelection();
-    });
-  });
-}
+    const resolvedStatus = String(
+      ai.system_status || (String(ai.severity || "").toLowerCase() === "critical" ? "CRITICAL" : (String(ai.severity || "").toLowerCase() === "low" ? "STABLE" : "WARNING"))
+    ).toUpperCase();
+    const resolvedLayer = String(ai.affected_layer || "processing").toLowerCase();
+    const resolvedConfidence = String(ai.confidence || "medium").toUpperCase();
+    const resolvedNextStep = String(ai?.decision?.next_step || (Array.isArray(ai.recommendations) && ai.recommendations[0]) || "No immediate step available.");
 
-function handleReportSelection() {
-  const checkboxes = document.querySelectorAll(".report-checkbox:checked");
-  comparisonState.selected = Array.from(checkboxes).map((cb) => {
-    const idx = Number(cb.getAttribute("data-index"));
-    return comparisonState.allReports[idx];
-  });
-
-  const warning = document.getElementById("warning-container");
-  if (comparisonState.selected.length > 3) {
-    const checkboxes = document.querySelectorAll(".report-checkbox");
-    checkboxes.forEach((cb) => (cb.checked = false));
-    comparisonState.selected = [];
-    if (warning) {
-      warning.innerHTML = '<div class="warning-box">Max 3 reports allowed. Selection cleared.</div>';
+    if (systemStatus) {
+      systemStatus.textContent = resolvedStatus;
+      systemStatus.className = `badge ${statusClass(resolvedStatus)}`;
     }
-    document.getElementById("comparison-view-section").style.display = "none";
-    document.getElementById("comparison-table-section").style.display = "none";
-    document.getElementById("comparison-insight-section").style.display = "none";
-    return;
-  }
+    if (layer) layer.textContent = resolvedLayer;
+    if (confidence) {
+      confidence.textContent = resolvedConfidence;
+      confidence.className = `badge ${severityClass(String(ai.severity || "medium").toLowerCase())}`;
+    }
+    if (summary) summary.textContent = ai.summary || "-";
+    if (root) root.textContent = ai.root_cause || "-";
+    if (impact) impact.textContent = ai.impact || "-";
+    if (nextStep) nextStep.textContent = resolvedNextStep;
 
-  if (warning) {
-    warning.innerHTML = comparisonState.selected.length > 0 ? "" : '<div class="info-box">Select 1-3 reports to compare.</div>';
-  }
+    if (severity) {
+      severity.textContent = String(ai.severity || "medium").toUpperCase();
+      severity.className = `badge ${severityClass(ai.severity)}`;
+    }
 
-  if (comparisonState.selected.length === 1) {
-    renderSingleReportView();
-    document.getElementById("comparison-view-section").style.display = "block";
-    document.getElementById("comparison-table-section").style.display = "none";
-    document.getElementById("comparison-insight-section").style.display = "none";
-  } else if (comparisonState.selected.length > 1) {
-    renderComparisonView();
-    renderComparisonTable();
-    renderComparisonInsight();
-    document.getElementById("comparison-view-section").style.display = "block";
-    document.getElementById("comparison-table-section").style.display = "block";
-    document.getElementById("comparison-insight-section").style.display = "block";
-  } else {
-    document.getElementById("comparison-view-section").style.display = "none";
-    document.getElementById("comparison-table-section").style.display = "none";
-    document.getElementById("comparison-insight-section").style.display = "none";
-  }
-}
+    if (urgency) {
+      urgency.textContent = String(ai.urgency || "medium").toUpperCase();
+      urgency.className = `badge ${urgencyClass(ai.urgency)}`;
+    }
 
-function renderSingleReportView() {
-  const container = document.getElementById("comparison-columns");
-  if (!container || comparisonState.selected.length !== 1) return;
+    if (recommendations) {
+      const recs = Array.isArray(ai.recommendations) ? ai.recommendations : [];
+      recommendations.innerHTML = recs.length
+        ? recs.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+        : "<li>No recommendation available.</li>";
+    }
 
-  const report = comparisonState.selected[0];
-  const result = report.result;
+    if (actions) {
+      const actionItems = Array.isArray(ai.actions) ? ai.actions : [];
+      actions.innerHTML = actionItems.length
+        ? actionItems
+            .map((item) => {
+              const label = escapeHtml(String(item?.label || "Action"));
+              const type = escapeHtml(String(item?.type || "monitor").toUpperCase());
+              const desc = escapeHtml(String(item?.description || ""));
+              return `<li><strong>${label}</strong> (${type}) - ${desc}</li>`;
+            })
+            .join("")
+        : "<li>No action available.</li>";
+    }
 
-  container.style.gridTemplateColumns = "1fr";
-  container.innerHTML = `
-    <div class="comparison-column">
-      <div class="column-header">${escapeHtml(report.name)}</div>
-      <div class="column-meta">Domain: ${escapeHtml(report.domain || "generic")}</div>
-      <div class="column-meta">Created: ${escapeHtml(new Date(report.created_at).toLocaleDateString())}</div>
-      <div class="column-metric">Spikes: <strong>${Number(result.counts.spikes || 0)}</strong></div>
-      <div class="column-metric">Drops: <strong>${Number(result.counts.drops || 0)}</strong></div>
-      <div class="column-metric">Anomalies: <strong>${Number(result.counts.anomalies || 0)}</strong></div>
-      <div class="column-metric">Quality: <strong>${Number(result.quality || 0)}</strong></div>
-      <div class="column-metric">Risk: <strong>${escapeHtml(result.risk || "unknown")}</strong></div>
-    </div>
-  `;
-}
-
-function renderComparisonView() {
-  const container = document.getElementById("comparison-columns");
-  if (!container) return;
-
-  const count = comparisonState.selected.length;
-  const columns = count === 1 ? 1 : count === 2 ? 2 : 3;
-  container.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
-
-  container.innerHTML = comparisonState.selected
-    .map(
-      (report) => {
-        const result = report.result;
-        return `
-    <div class="comparison-column">
-      <div class="column-header">${escapeHtml(report.name)}</div>
-      <div class="column-meta">Domain: ${escapeHtml(report.domain || "generic")}</div>
-      <div class="column-metric">Spikes: <strong>${Number(result.counts.spikes || 0)}</strong></div>
-      <div class="column-metric">Drops: <strong>${Number(result.counts.drops || 0)}</strong></div>
-      <div class="column-metric">Anomalies: <strong>${Number(result.counts.anomalies || 0)}</strong></div>
-      <div class="column-metric">Quality: <strong>${Number(result.quality || 0)}</strong></div>
-      <div class="column-metric">Risk: <strong>${escapeHtml(result.risk || "unknown")}</strong></div>
-    </div>
-  `;
+    if (apiStatus) {
+      if (String(ai?.error || "") === "AI service not configured") {
+        apiStatus.className = "status error";
+        apiStatus.textContent = "AI insights unavailable";
+      } else {
+        apiStatus.className = "status";
+        apiStatus.textContent = "";
       }
-    )
-    .join("");
+    }
+  };
+
+  let ai = ensureAiAnalysis(result);
+  if (ai.source === "local_fallback") {
+    try {
+      ai = await fetchAiAnalysisFromApi(result);
+      result.ai_analysis = ai;
+      setStoredResult(result);
+    } catch (error) {
+      if (String(error.message || "") === "AI analysis endpoint failed") {
+        ai = { error: "AI service not configured" };
+      } else {
+        ai = ensureAiAnalysis(result);
+      }
+    }
+  }
+
+  if (ai && String(ai.error || "") === "AI service not configured") {
+    ai = {
+      summary: "AI insights unavailable",
+      affected_layer: "processing",
+      root_cause: "AI service not configured",
+      severity: "medium",
+      impact: "Core signal analytics are available, but AI explanation is unavailable.",
+      recommendations: ["Configure the AI service key on the backend environment."],
+      urgency: "medium",
+      confidence: "medium",
+      system_status: "WARNING",
+      diagnosis: "AI service key is missing on backend runtime configuration.",
+      decision: {
+        action_required: true,
+        priority: "medium",
+        next_step: "Configure backend AI key and restart server.",
+      },
+      actions: [
+        {
+          label: "Configure Backend Key",
+          type: "investigate",
+          description: "Set backend environment key and restart runtime process.",
+        },
+      ],
+      error: "AI service not configured",
+      source: "unavailable",
+    };
+  }
+
+  renderAi(ai);
 }
 
-function renderComparisonTable() {
-  const container = document.getElementById("comparison-table-container");
-  if (!container || comparisonState.selected.length === 0) return;
+function buildComparisonSummary(selected) {
+  if (!selected.length) return "Select one or more reports to compare.";
 
-  const metrics = ["Spikes", "Drops", "Anomalies", "Quality"];
-  const values = metrics.map((metric) => {
-    const vals = comparisonState.selected.map((report) => {
-      const result = report.result;
-      if (metric === "Spikes") return Number(result.counts.spikes || 0);
-      if (metric === "Drops") return Number(result.counts.drops || 0);
-      if (metric === "Anomalies") return Number(result.counts.anomalies || 0);
-      if (metric === "Quality") return Number(result.quality || 0);
-      return 0;
-    });
-
-    const highest = Math.max(...vals);
-    const lowest = Math.min(...vals);
-
-    return { metric, vals, highest, lowest };
+  const withSignals = selected.map((r) => {
+    const counts = r?.result?.counts || { spikes: 0, drops: 0, anomalies: 0 };
+    const total = Number(counts.spikes || 0) + Number(counts.drops || 0) + Number(counts.anomalies || 0);
+    return { report: r, total };
   });
 
-  const headers = ["Metric", ...comparisonState.selected.map((r) => escapeHtml(r.name))].join("</th><th>");
-  const rows = values
-    .map(
-      (row) =>
-        `<tr><td><strong>${row.metric}</strong></td>${row.vals
-          .map((val) => {
-            let cls = "";
-            if (val === row.highest && row.highest !== row.lowest) cls = "cell-highlight-high";
-            if (val === row.lowest && row.highest !== row.lowest) cls = "cell-highlight-low";
-            return `<td class="${cls}">${escapeHtml(String(val))}</td>`;
-          })
-          .join("")}</tr>`
-    )
-    .join("");
+  const least = withSignals.reduce((a, b) => (a.total <= b.total ? a : b));
+  const most = withSignals.reduce((a, b) => (a.total >= b.total ? a : b));
 
-  container.innerHTML = `<table class="comparison-table"><thead><tr><th>${headers}</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
-
-function renderComparisonInsight() {
-  const container = document.getElementById("comparison-insight");
-  if (!container || comparisonState.selected.length === 0) return;
-
-  const insights = [];
-
-  const spikeCounts = comparisonState.selected.map((r) => Number(r.result.counts.spikes || 0));
-  const maxSpikes = Math.max(...spikeCounts);
-  const minSpikes = Math.min(...spikeCounts);
-  const maxSpikeIdx = comparisonState.selected.findIndex((r) => Number(r.result.counts.spikes || 0) === maxSpikes);
-
-  if (maxSpikes > minSpikes) {
-    insights.push(
-      `${escapeHtml(comparisonState.selected[maxSpikeIdx].name)} has highest spikes (${maxSpikes}).`
-    );
-  }
-
-  const anomalyCounts = comparisonState.selected.map((r) => Number(r.result.counts.anomalies || 0));
-  const maxAnomalies = Math.max(...anomalyCounts);
-  const maxAnomalyIdx = comparisonState.selected.findIndex((r) => Number(r.result.counts.anomalies || 0) === maxAnomalies);
-
-  if (maxAnomalies >= 5) {
-    insights.push(
-      `${escapeHtml(comparisonState.selected[maxAnomalyIdx].name)} has highest anomalies (${maxAnomalies}).`
-    );
-  }
-
-  const qualityCounts = comparisonState.selected.map((r) => Number(r.result.quality || 0));
-  const maxQuality = Math.max(...qualityCounts);
-  const minQuality = Math.min(...qualityCounts);
-  const maxQualityIdx = comparisonState.selected.findIndex((r) => Number(r.result.quality || 0) === maxQuality);
-
-  if (maxQuality > minQuality) {
-    insights.push(
-      `${escapeHtml(comparisonState.selected[maxQualityIdx].name)} has best quality (${maxQuality}).`
-    );
-  }
-
-  if (insights.length === 0) {
-    insights.push("All reports show similar characteristics.");
-  }
-
-  container.textContent = insights.join(" ");
+  return `${least.report.name} appears more stable than ${most.report.name} based on lower total signal events.`;
 }
 
 async function initComparison() {
-  const emptyState = document.getElementById("empty-state");
-  const comparisonContent = document.getElementById("comparison-content");
-  const reportsList = document.getElementById("reports-list");
-
-  if (!reportsList) return;
-
-  const history = getReportHistory();
-
-  if (history.length === 0) {
-    if (emptyState) emptyState.style.display = "block";
-    if (comparisonContent) comparisonContent.style.display = "none";
-    reportsList.innerHTML = "<p class='muted'>No reports available. Upload datasets first.</p>";
+  const history = getHistory();
+  if (!history.length) {
+    renderEmptyState("empty-state", "comparison-content");
     return;
   }
 
-  if (emptyState) emptyState.style.display = "none";
-  if (comparisonContent) comparisonContent.style.display = "block";
+  renderReadyState("empty-state", "comparison-content");
 
-  renderReportsList(history);
-}
+  const list = document.getElementById("reports-list");
+  const warning = document.getElementById("warning-container");
+  const viewSection = document.getElementById("comparison-view-section");
+  const tableSection = document.getElementById("comparison-table-section");
+  const insightSection = document.getElementById("comparison-insight-section");
+  const columns = document.getElementById("comparison-columns");
+  const tableContainer = document.getElementById("comparison-table-container");
+  const insight = document.getElementById("comparison-insight");
 
-function reset() {
-  localStorage.removeItem("dfis_latest");
-  localStorage.removeItem("dfis_report_meta");
-  
-  const emptyStates = document.querySelectorAll(".empty-state");
-  const contents = document.querySelectorAll("#dashboard-content, #report-content, #comparison-content");
-  
-  emptyStates.forEach((el) => { el.style.display = "block"; });
-  contents.forEach((el) => { el.style.display = "none"; });
-  
-  const graphs = document.querySelectorAll("#graph");
-  graphs.forEach((svg) => { svg.innerHTML = ""; });
-  
-  window.location.href = "/dashboard.html";
-}
+  if (!list) return;
 
-document.addEventListener("DOMContentLoaded", () => {
-  const domainSelect = document.getElementById("domain-select");
+  const rows = history
+    .map(
+      (item, i) => `
+      <div class="report-item">
+        <input class="report-checkbox" type="checkbox" data-index="${i}" id="rep-${i}">
+        <label for="rep-${i}">${escapeHtml(item.name)} (${escapeHtml(item.domain || "generic")})</label>
+      </div>
+    `
+    )
+    .join("");
 
-  if (!domainSelect) {
-    console.error("domain-select not found");
-  } else {
-    domainSelect.addEventListener("change", (e) => {
-      updateDomainUI(e.target.value);
-      const validationFeedback = document.getElementById("validation-feedback");
-      if (validationFeedback) validationFeedback.style.display = "none";
+  list.innerHTML = rows;
+  if (warning) warning.innerHTML = '<div class="info-box">Select up to 3 reports to compare.</div>';
+
+  const checkboxes = Array.from(document.querySelectorAll(".report-checkbox"));
+  const renderSelection = () => {
+    const selected = checkboxes
+      .filter((cb) => cb.checked)
+      .map((cb) => history[Number(cb.getAttribute("data-index"))])
+      .slice(0, 3);
+
+    checkboxes.forEach((cb, idx) => {
+      if (idx >= 3 && selected.length >= 3) cb.disabled = !cb.checked;
+      else cb.disabled = false;
     });
-  }
 
-  setTimeout(() => {
-    const select = document.getElementById("domain-select");
-    if (select) updateDomainUI(select.value);
-  }, 500);
+    if (!selected.length) {
+      if (viewSection) viewSection.style.display = "none";
+      if (tableSection) tableSection.style.display = "none";
+      if (insightSection) insightSection.style.display = "none";
+      return;
+    }
+
+    if (viewSection) viewSection.style.display = "block";
+    if (tableSection) tableSection.style.display = selected.length > 1 ? "block" : "none";
+    if (insightSection) insightSection.style.display = "block";
+
+    if (columns) {
+      columns.style.gridTemplateColumns = `repeat(${Math.min(selected.length, 3)}, 1fr)`;
+      columns.innerHTML = selected
+        .map((entry) => {
+          const counts = entry.result?.counts || { spikes: 0, drops: 0, anomalies: 0 };
+          const ai = ensureAiAnalysis(entry.result || {});
+          return `
+            <article class="comparison-column">
+              <div class="column-header">${escapeHtml(entry.name)}</div>
+              <div class="column-meta">Domain: ${escapeHtml(entry.domain || "generic")}</div>
+              <div class="column-metric">Spikes: <strong>${Number(counts.spikes || 0)}</strong></div>
+              <div class="column-metric">Drops: <strong>${Number(counts.drops || 0)}</strong></div>
+              <div class="column-metric">Anomalies: <strong>${Number(counts.anomalies || 0)}</strong></div>
+              <div class="column-metric">Severity: <strong>${escapeHtml(String(ai.severity || "medium").toUpperCase())}</strong></div>
+            </article>
+          `;
+        })
+        .join("");
+    }
+
+    if (tableContainer && selected.length > 1) {
+      const header = ["Metric", ...selected.map((s) => escapeHtml(s.name))];
+      const metricRows = ["spikes", "drops", "anomalies", "quality"];
+      tableContainer.innerHTML = `
+        <table class="comparison-table">
+          <thead><tr>${header.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${metricRows
+              .map((metric) => {
+                const values = selected.map((s) => {
+                  if (metric === "quality") return Number(s.result?.quality || 0);
+                  return Number(s.result?.counts?.[metric] || 0);
+                });
+                return `<tr><td><strong>${escapeHtml(metric.toUpperCase())}</strong></td>${values
+                  .map((v) => `<td>${v}</td>`)
+                  .join("")}</tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    if (insight) {
+      insight.textContent = buildComparisonSummary(selected);
+    }
+  };
+
+  checkboxes.forEach((cb) => cb.addEventListener("change", renderSelection));
+}
+
+window.addEventListener("error", (event) => {
+  const status = document.getElementById("status");
+  if (status) {
+    status.className = "status error";
+    status.textContent = event.error?.message || "Unexpected error";
+  }
+});
+
+window.addEventListener("unhandledrejection", () => {
+  const status = document.getElementById("status");
+  if (status) {
+    status.className = "status error";
+    status.textContent = "Unexpected network error";
+  }
 });
 
 async function boot() {
@@ -992,11 +779,7 @@ async function boot() {
   if (page === "dashboard") return initDashboard();
   if (page === "report") return initReport();
   if (page === "comparison") return initComparison();
+  if (page === "ai") return initAiInsights();
 }
 
-boot().catch((error) => {
-  const panel = document.querySelector(".panel");
-  if (panel) {
-    panel.insertAdjacentHTML("beforeend", `<div class="status error">${escapeHtml(error.message || "Unexpected error")}</div>`);
-  }
-});
+boot();

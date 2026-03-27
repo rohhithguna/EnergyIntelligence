@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Flow Intelligence - AI Insights</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <h1>AI Insights</h1>
+      <nav>
+        <a href="/index.html">Upload</a>
+        <a href="/dashboard.html">Dashboard</a>
+        <a href="/report.html">Report</a>
+        <a class="active" href="/ai_insights.html">AI Insights</a>
+        <a href="/comparison.html">Comparison</a>
+        <a href="/index.html" class="btn-add-dataset">+ Add Dataset</a>
+      </nav>
+    </header>
+
+    <div id="empty-state" class="empty-state" style="display:none;">
+      <p>No analysis data found. Upload a dataset to generate AI insights.</p>
+    </div>
+
+    <div id="ai-insights-content" style="display:none;">
+      <section class="section">
+        <div id="ai-api-status" class="status"></div>
+      </section>
+
+      <section class="section ai-grid">
+        <div class="ai-item">
+          <h3>System Status</h3>
+          <div id="ai-system-status" class="badge sev-medium">WARNING</div>
+        </div>
+
+        <div class="ai-item">
+          <h3>Affected Layer</h3>
+          <p id="ai-layer">-</p>
+        </div>
+
+        <div class="ai-item">
+          <h3>Confidence</h3>
+          <div id="ai-confidence" class="badge sev-medium">MEDIUM</div>
+        </div>
+
+        <div class="ai-item">
+          <h3>Summary</h3>
+          <p id="ai-summary">-</p>
+        </div>
+
+        <div class="ai-item">
+          <h3>Root Cause</h3>
+          <p id="ai-root-cause">-</p>
+        </div>
+
+        <div class="ai-item">
+          <h3>Severity</h3>
+          <div id="ai-severity" class="badge sev-medium">MEDIUM</div>
+        </div>
+
+        <div class="ai-item">
+          <h3>Impact</h3>
+          <p id="ai-impact">-</p>
+        </div>
+
+        <div class="ai-item">
+          <h3>Recommendations</h3>
+          <ul id="ai-recommendations" class="findings-list"></ul>
+        </div>
+
+        <div class="ai-item">
+          <h3>Urgency</h3>
+          <div id="ai-urgency" class="badge urg-monitor">MONITOR</div>
+        </div>
+
+        <div class="ai-item">
+          <h3>Next Step</h3>
+          <p id="ai-next-step">-</p>
+        </div>
+
+        <div class="ai-item">
+          <h3>Actions</h3>
+          <ul id="ai-actions" class="findings-list"></ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

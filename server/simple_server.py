@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from main import run_pipeline
 from domain_mapper import apply_column_mapping
+from core.ai_engine import analyze_with_claude
 
 
 LAST_RESULT = None
@@ -94,7 +95,7 @@ def parse_multipart(body, content_type):
             file_item = {"filename": filename, "content": content}
         elif field_name == "domain" and not filename:
             domain = content.decode("utf-8", errors="ignore").strip()
-    
+
     return file_item, domain
 
 
@@ -154,6 +155,10 @@ class AnalysisHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_RESULT
+
+        if self.path == "/api/ai-analysis":
+            self.handle_ai_analysis_request()
+            return
 
         if self.path not in ["/analyze", "/upload"]:
             self.send_json(404, {"error": "Endpoint not found"})
@@ -233,6 +238,41 @@ class AnalysisHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json(200, result)
             finally:
                 os.unlink(temp_file.name)
+        except Exception as exc:
+            self.send_json(500, {"error": str(exc)})
+
+    def handle_ai_analysis_request(self):
+        try:
+            content_type = self.headers.get("Content-Type", "")
+            if "application/json" not in content_type:
+                self.send_json(400, {"error": "Content-Type must be application/json"})
+                return
+
+            content_length = int(self.headers.get("Content-Length", 0))
+            if content_length <= 0:
+                self.send_json(400, {"error": "Request body is empty"})
+                return
+
+            raw_body = self.rfile.read(content_length)
+            payload = json.loads(raw_body.decode("utf-8"))
+            if not isinstance(payload, dict):
+                self.send_json(400, {"error": "Invalid payload format"})
+                return
+
+            data = payload.get("data")
+            if not isinstance(data, dict):
+                self.send_json(400, {"error": "Invalid data payload"})
+                return
+
+            ai_analysis = analyze_with_claude(data)
+            self.send_json(200, {"ai_analysis": ai_analysis})
+        except json.JSONDecodeError:
+            self.send_json(400, {"error": "Malformed JSON payload"})
+        except RuntimeError as exc:
+            if str(exc) == "Anthropic API key not configured":
+                self.send_json(503, {"error": "AI service not configured"})
+                return
+            self.send_json(500, {"error": str(exc)})
         except Exception as exc:
             self.send_json(500, {"error": str(exc)})
 

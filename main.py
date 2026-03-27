@@ -3,9 +3,8 @@ import json
 import numpy as np
 import pandas as pd
 
-from analysis.insight_generator import generate_insights
 from analysis.quality_engine import compute_quality_score
-from analysis.recommendation_engine import generate_recommendations
+from core.ai_engine import analyze_with_claude
 from core.anomaly_engine import detect_anomalies
 from core.pattern_spike_engine import run_core_engine
 from core.risk_engine import compute_risk
@@ -196,11 +195,6 @@ def run_pipeline(file_path):
         root_cause_hints = _root_cause_hints(spikes_events, drops_events, anomalies_events)
         trend_text = _trend_interpretation(str(trend).lower())
 
-        insights = generate_insights(spikes_events, drops_events, anomalies_events, str(trend).lower(), dist)
-        recommendations = generate_recommendations(
-            len(spikes), len(drops), len(anomalies_df), risk["level"]
-        )
-
         risk_level = str(risk["level"]).lower()
 
         result = {
@@ -222,8 +216,6 @@ def run_pipeline(file_path):
             "root_cause_hints": root_cause_hints,
             "time_analysis": time_analysis,
             "system_stability": "unstable" if risk_level == "high" else "stable",
-            "insights": insights,
-            "recommendations": recommendations,
             "counts": {
                 "spikes": len(spikes),
                 "drops": len(drops),
@@ -234,6 +226,14 @@ def run_pipeline(file_path):
                 "data_rate": df["data_rate"].astype(float).tolist(),
             },
         }
+
+        try:
+            result["ai_analysis"] = analyze_with_claude(result)
+        except RuntimeError as exc:
+            if str(exc) == "Anthropic API key not configured":
+                result["ai_analysis"] = {"error": "AI service not configured", "source": "unavailable"}
+            else:
+                raise
         return result
     
     except Exception as e:
@@ -244,8 +244,15 @@ def run_pipeline(file_path):
             "spikes": [],
             "drops": [],
             "anomalies": [],
-            "insights": [f"Error during analysis: {str(e)}"],
-            "recommendations": ["Please check your data format and try again"],
+            "ai_analysis": {
+                "summary": f"Error during analysis: {str(e)}",
+                "root_cause": "Pipeline processing failure",
+                "severity": "high",
+                "impact": "No analysis output generated.",
+                "recommendations": ["Please check your data format and try again."],
+                "urgency": "immediate",
+                "source": "pipeline_error",
+            },
             "counts": {"spikes": 0, "drops": 0, "anomalies": 0},
         }
 

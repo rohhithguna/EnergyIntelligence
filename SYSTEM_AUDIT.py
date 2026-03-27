@@ -20,7 +20,7 @@ def check_imports():
         from data.preprocessor import preprocess_data
         from core.pattern_spike_engine import run_core_engine
         from core.anomaly_engine import detect_anomalies
-        from analysis.insight_generator import generate_insights
+        from core.ai_engine import analyze_with_claude
         from analysis.correlation import compute_correlation
         from domain_mapper import apply_column_mapping, FRONTEND_DOMAIN_MAPPING
         from main import run_pipeline
@@ -45,7 +45,7 @@ def check_pipeline():
         from main import run_pipeline
         output = run_pipeline(sample_file)
         
-        required_keys = ["spikes", "drops", "anomalies", "insights", "risk", "quality", "trend"]
+        required_keys = ["spikes", "drops", "anomalies", "ai_analysis", "risk", "quality", "trend"]
         missing = [k for k in required_keys if k not in output]
         
         if missing:
@@ -120,6 +120,7 @@ def check_frontend_files():
         "frontend/index.html",
         "frontend/dashboard.html",
         "frontend/report.html",
+        "frontend/ai_insights.html",
         "frontend/comparison.html",
         "frontend/script.js",
         "frontend/style.css",
@@ -148,10 +149,10 @@ def check_backend_structure():
         "data/loader.py",
         "data/preprocessor.py",
         "core/__init__.py",
+        "core/ai_engine.py",
         "core/anomaly_engine.py",
         "core/pattern_spike_engine.py",
         "analysis/__init__.py",
-        "analysis/insight_generator.py",
         "analysis/correlation.py"
     ]
     
